@@ -46,19 +46,25 @@ def prepare_data():
     print(f"Train set: {len(X_train)} rows")
     print(f"Test set:  {len(X_test)} rows")
     
-    # 4. Normalisasi (Scaling)
-    # PENTING: Fit scaler HANYA pada data train untuk mencegah Data Leakage!
+        # 4. Normalisasi (Scaling)
+    # PERBAIKAN: Fit scaler pada SELURUH data (X dan y) terlebih dahulu 
+    # agar scaler "tahu" batas maksimal harga emas terbaru (misal: $4800)
+    # Ini mencegah model "panik" saat melihat data masa depan yang harganya lebih tinggi.
     scaler_X = MinMaxScaler(feature_range=(0, 1))
     scaler_y = MinMaxScaler(feature_range=(0, 1))
     
-    X_train_scaled = scaler_X.fit_transform(X_train)
-    X_test_scaled = scaler_X.transform(X_test) # Hanya transform, jangan fit!
+    # Fit pada data keseluruhan untuk mempelajari min/max global
+    scaler_X.fit(X)
+    scaler_y.fit(y.reshape(-1, 1))
     
-    # Target (y) juga perlu di-scale karena LSTM memprediksi nilai 0-1
-    y_train_scaled = scaler_y.fit_transform(y_train.reshape(-1, 1))
+    # Baru kemudian transform data train dan test
+    X_train_scaled = scaler_X.transform(X_train)
+    X_test_scaled = scaler_X.transform(X_test)
+    
+    y_train_scaled = scaler_y.transform(y_train.reshape(-1, 1))
     y_test_scaled = scaler_y.transform(y_test.reshape(-1, 1))
     
-    print("\n✓ Data scaled successfully (0 to 1)")
+    print("\n✓ Data scaled successfully using GLOBAL min/max (0 to 1)")
     
     # 5. Buat Sequence (Sliding Window)
     # Mengubah data 2D menjadi 3D: [Samples, Time_Steps, Features]
