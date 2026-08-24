@@ -5,15 +5,9 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import SEQUENCE_LENGTH, TEST_SIZE
+from config import SEQUENCE_LENGTH, TEST_SIZE, FEATURES
 from src.feature_eng import calculate_technical_indicators, create_target_variable, clean_feature_data
 from src.data_loader import load_gold_data, load_sentiment_data, merge_data
-
-# Kolom yang akan digunakan sebagai fitur (input)
-# Kita buang 'date' dan 'target_price' dari fitur input
-FEATURES = ['price', 'open', 'high', 'low', 'change_%', 'vol', 
-            'sentiment_score', 'avg_confidence', 'RSI', 'MACD', 
-            'MACD_Signal', 'MACD_Diff', 'SMA_20']
 
 def prepare_data():
     """Memuat data dan melakukan preprocessing lengkap"""
@@ -29,17 +23,17 @@ def prepare_data():
     df_target = create_target_variable(df_features)
     df_final = clean_feature_data(df_target)
     
-    # 2. Pisahkan Fitur (X) dan Target (y)
-    X = df_final[FEATURES].values
+    # 2. Pastikan HANYA 7 fitur yang diambil
+    available_cols = [col for col in FEATURES if col in df_final.columns]
+    print(f"Fitur yang digunakan ({len(available_cols)}): {available_cols}")
+    
+    X = df_final[available_cols].values # Rumus Early Fusion (Konkatenasi / Penggabungan)
     y = df_final['target_price'].values
     
-    print(f"\nTotal data: {len(X)} rows")
-    print(f"Features shape: {X.shape}")
+    print(f"\nTotal data valid: {len(X)} rows")
     
-    # 3. Train/Test Split (Time Series Split - TIDAK BOLEH ACAK!)
-    # Kita ambil 80% data pertama untuk training, 20% terakhir untuk testing
+    # 3. Train/Test Split (Chronological)
     split_idx = int(len(X) * (1 - TEST_SIZE))
-    
     X_train, X_test = X[:split_idx], X[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
     
@@ -47,49 +41,30 @@ def prepare_data():
     print(f"Test set:  {len(X_test)} rows")
     
         # 4. Normalisasi (Scaling)
-    # PERBAIKAN: Fit scaler pada SELURUH data (X dan y) terlebih dahulu 
-    # agar scaler "tahu" batas maksimal harga emas terbaru (misal: $4800)
-    # Ini mencegah model "panik" saat melihat data masa depan yang harganya lebih tinggi.
     scaler_X = MinMaxScaler(feature_range=(0, 1))
     scaler_y = MinMaxScaler(feature_range=(0, 1))
     
-    # Fit pada data keseluruhan untuk mempelajari min/max global
-    scaler_X.fit(X)
+    scaler_X.fit(X) # <-- Mencari X_min dan X_max PER KOLOM
     scaler_y.fit(y.reshape(-1, 1))
     
-    # Baru kemudian transform data train dan test
-    X_train_scaled = scaler_X.transform(X_train)
+    X_train_scaled = scaler_X.transform(X_train) # <-- Menerapkan rumus
     X_test_scaled = scaler_X.transform(X_test)
-    
     y_train_scaled = scaler_y.transform(y_train.reshape(-1, 1))
     y_test_scaled = scaler_y.transform(y_test.reshape(-1, 1))
     
-    print("\n✓ Data scaled successfully using GLOBAL min/max (0 to 1)")
-    
-    # 5. Buat Sequence (Sliding Window)
-    # Mengubah data 2D menjadi 3D: [Samples, Time_Steps, Features]
+    # 5. Buat Sequence
     X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train_scaled, SEQUENCE_LENGTH)
     X_test_seq, y_test_seq = create_sequences(X_test_scaled, y_test_scaled, SEQUENCE_LENGTH)
     
     print(f"\n✓ Sequences created with window size: {SEQUENCE_LENGTH} days")
-    print(f"  X_train shape: {X_train_seq.shape} -> (Samples, Time_Steps, Features)")
+    print(f"  X_train shape: {X_train_seq.shape}")
     print(f"  X_test shape:  {X_test_seq.shape}")
     
-    return X_train_seq, y_train_seq, X_test_seq, y_test_seq, scaler_X, scaler_y
+    return X_train_seq, y_train_seq, X_test_seq, y_test_seq, scaler_X, scaler_y, df_final
 
 def create_sequences(X, y, time_steps):
-    """Membuat sliding window untuk LSTM"""
     Xs, ys = [], []
     for i in range(len(X) - time_steps):
-        Xs.append(X[i:(i + time_steps)])
-        ys.append(y[i + time_steps]) # Target adalah hari ke-(time_steps)
+        Xs.append(X[i:(i + time_steps)]) # Mengambil 60 baris berurutan
+        ys.append(y[i + time_steps])
     return np.array(Xs), np.array(ys)
-
-if __name__ == "__main__":
-    # Jalankan preprocessing
-    X_train, y_train, X_test, y_test, scaler_X, scaler_y = prepare_data()
-    
-    print("\n" + "="*60)
-    print("PREPROCESSING COMPLETE!")
-    print("="*60)
-    print("Data siap untuk dimasukkan ke model LSTM.")

@@ -20,10 +20,11 @@ def calculate_technical_indicators(df):
     df['MACD_Signal'] = macd.macd_signal()
     df['MACD_Diff'] = macd.macd_diff()
     
-    # 3. SMA (Simple Moving Average) - window 20 hari
+    # 3. SMA (Simple Moving Average) - window 20 dan 50 hari
     df['SMA_20'] = ta.trend.SMAIndicator(close=df['price'], window=20).sma_indicator()
+    df['SMA_50'] = ta.trend.SMAIndicator(close=df['price'], window=50).sma_indicator()  # TAMBAHKAN INI
     
-    print("✓ Technical indicators calculated (RSI, MACD, SMA_20)")
+    print("✓ Technical indicators calculated (RSI, MACD, SMA_20, SMA_50)")
     return df
 
 def create_target_variable(df):

@@ -1,0 +1,18 @@
+[theme]
+# Memaksa tema terang
+base = "light"
+
+# Warna utama (Aku pakai warna Emas/Gold agar sesuai dengan tema prediksi emas)
+primaryColor = "#D4AF37"
+
+# Warna latar belakang utama (Putih bersih)
+backgroundColor = "#FFFFFF"
+
+# Warna latar belakang sekunder (untuk sidebar dan kotak-kotak widget)
+secondaryBackgroundColor = "#F0F2F6"
+
+# Warna teks (Abu-abu gelap agar kontras dan mudah dibaca di latar putih)
+textColor = "#262730"
+
+# Jenis font
+font = "sans serif"

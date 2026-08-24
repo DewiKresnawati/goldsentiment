@@ -65,7 +65,7 @@ def predict_future_days(model, last_sequence_scaled, scaler_y, days_ahead):
     Model memprediksi 1 hari, lalu menggunakan hasilnya sebagai input untuk hari berikutnya.
     """
     predictions_scaled = []
-    current_seq = last_sequence_scaled.copy()  # Shape: (1, 30, 13)
+    current_seq = last_sequence_scaled.copy()  # Shape: (1, 60, 7)
 
     for _ in range(days_ahead):
         # 1. Prediksi 1 langkah ke depan
@@ -73,19 +73,19 @@ def predict_future_days(model, last_sequence_scaled, scaler_y, days_ahead):
         predictions_scaled.append(pred_scaled[0][0])
 
         # 2. Siapkan input untuk langkah berikutnya
-        # Asumsi: Fitur lain (Open, High, RSI, dll) dianggap konstan sama dengan hari terakhir
-        last_row = current_seq[0, -1, :]
-        new_row = last_row.copy()
-        new_row[0] = pred_scaled[0][0]  # Update hanya kolom 'price' (index 0)
+        # Asumsi: Fitur lain (selain price) dianggap konstan sama dengan hari terakhir
+        last_row = current_seq[0, -1, :].copy()
+        last_row[0] = pred_scaled[0][0]  # Update hanya kolom 'price' (index 0)
 
         # Geser array (buang hari tertua, tambah hari prediksi)
-        new_seq = np.append(current_seq[0, 1:, :], new_row.reshape(1, 13), axis=0)
+        new_seq = np.append(current_seq[0, 1:, :], last_row.reshape(1, len(FEATURES)), axis=0)
         current_seq = new_seq.reshape(1, SEQUENCE_LENGTH, len(FEATURES))
 
     # Kembalikan ke nilai Dollar asli
     predictions_real = scaler_y.inverse_transform(
         np.array(predictions_scaled).reshape(-1, 1)
     ).flatten()
+
     return predictions_real
 
 
@@ -101,7 +101,7 @@ st.set_page_config(
 # ==========================================
 # 4. SIDEBAR & HEADER
 # ==========================================
-st.sidebar.title("️ Pengaturan Dashboard")
+st.sidebar.title("⚙️ Pengaturan Dashboard")
 st.sidebar.markdown("---")
 st.sidebar.info("""
 **Tentang Proyek Ini:**
@@ -113,7 +113,7 @@ Dashboard ini memprediksi harga emas (Gold Futures) menggunakan model Deep Learn
 3. Analisis Sentimen Berita Keuangan Indonesia
 """)
 
-st.title("📈 Dashboard Prediksi Harga Emas (Gold Futures)")
+st.title(" Dashboard Prediksi Harga Emas (Gold Futures)")
 st.markdown("Analisis historis, sentimen pasar, dan prediksi harga berbasis *Deep Learning* (LSTM).")
 
 # Muat semua data dan model di awal
@@ -128,11 +128,12 @@ st.markdown("---")
 # ==========================================
 # 5. TAB NAVIGASI
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔮 Integrasi Data & Sentimen",
     "📊 Analisis Historis Harga",
-    " Analisis Sentimen Berita",
-    " Detail Data"
+    "📰 Analisis Sentimen Berita",
+    "📁 Detail Data",
+    "🚀 Prediksi Masa Depan"  # TAB BARU
 ])
 
 
@@ -198,50 +199,50 @@ with tab1:
         template="plotly_white",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
-    st.plotly_chart(fig_actual, width="stretch")
+    st.plotly_chart(fig_actual, use_container_width=True)
 
     # Info Box Penjelasan
     st.info(f"""
     **📊 Informasi Data:**
     - Rentang data lengkap: **{min_date_full}** sampai **{max_date_full}**
-    - Data Training (80%): Januari 2021 - ~Juni 2025 (model belajar dari data ini)
-    - Data Testing (20%): ~Juni 2025 - April 2026 (model diuji pada data ini)
+    - Data Training (80%): Januari 2021 - Agustus 2025 (model belajar dari data ini)
+    - Data Testing (20%): Agustus 2025 - April 2026 (model diuji pada data ini)
     - **Garis prediksi (merah putus-putus) hanya muncul di periode Data Testing** karena model hanya diprediksi pada data yang belum pernah dilihat.
     """)
 
-        # Metrik Akurasi (Dihitung Dinamis dalam Persentase)
+    # Metrik Akurasi (Dihitung Dinamis dalam Persentase)
     st.markdown("### 📏 Metrik Akurasi Model (Pada Data Testing 20%)")
-    
+
     if not df_pred.empty:
         actuals = df_pred['Actual_Price'].values
         preds = df_pred['Predicted_Price'].values
-        
+
         # 1. MAPE (Mean Absolute Percentage Error)
-        mape = np.mean(np.abs((actuals - preds) / actuals)) * 100
-        
+        mape = np.mean(np.abs((actuals - preds) / (actuals + 1e-8))) * 100
+
         # 2. NRMSE (Normalized Root Mean Square Error)
         rmse = np.sqrt(np.mean((actuals - preds)**2))
         nrmse = (rmse / np.mean(actuals)) * 100
-        
+
         # 3. Directional Accuracy (DA) - Seberapa sering tebakan arah (Naik/Turun) benar
         actual_direction = np.sign(np.diff(actuals))
         pred_direction = np.sign(np.diff(preds))
         da = np.mean(actual_direction == pred_direction) * 100
-        
+
         col1, col2, col3 = st.columns(3)
-        
+
         col1.metric(
             label="MAPE (Mean Absolute % Error)",
             value=f"{mape:.2f}%",
             help="Rata-rata persentase penyimpangan prediksi dari harga asli."
         )
-        
+
         col2.metric(
             label="NRMSE (Normalized RMSE)",
             value=f"{nrmse:.2f}%",
             help="Root Mean Square Error yang dinormalisasi terhadap rata-rata harga, untuk perbandingan yang adil."
         )
-        
+
         col3.metric(
             label="DA (Directional Accuracy)",
             value=f"{da:.2f}%",
@@ -250,112 +251,9 @@ with tab1:
             help="Persentase keberhasilan model dalam menebak arah harga (Naik/Turun) dengan benar. >50% berarti lebih baik dari tebakan acak."
         )
     else:
-        st.warning("Data testing tidak tersedia untuk menghitung metrik.")
+        st.warning("⚠️ Data testing tidak tersedia. Jalankan `python -m src.evaluation` terlebih dahulu di terminal!")
 
     st.markdown("---")
-
-    # --- BAGIAN B: Prediksi Masa Depan (Future Forecasting) ---
-    st.header("🔮 Prediksi Masa Depan (Future Forecasting)")
-    st.markdown("Gunakan model yang sudah dilatih untuk meramal harga emas di masa depan.")
-
-    last_date = df_full['date'].max()
-    last_date_str = last_date.strftime("%d %B %Y")
-    last_price = df_full['price'].iloc[-1]
-
-    st.info(f"📅 **Titik Mulai Prediksi:** Hari terakhir data tersedia adalah **{last_date_str}** (Harga: ${last_price:,.2f}).")
-    st.warning("⚠️ **Catatan Ilmiah:** Model memprediksi hari demi hari secara berantai (rekursif). Memprediksi lebih dari 30 hari ke depan tidak disarankan karena akumulasi error.")
-
-    duration_options = {
-        "1 Minggu (7 Hari)": 7,
-        "2 Minggu (14 Hari)": 14,
-        "1 Bulan (30 Hari)": 30
-    }
-
-    selected_duration = st.selectbox(
-        "Pilih durasi prediksi ke depan:",
-        options=list(duration_options.keys()),
-        index=0,
-        key="duration_selector_tab1"
-    )
-
-    days_ahead = duration_options[selected_duration]
-
-    if st.button("🚀 Jalankan Prediksi Masa Depan", type="primary"):
-        with st.spinner(f"Sedang meramal harga untuk {days_ahead} hari ke depan dari {last_date_str}..."):
-
-            # 1. Ambil 30 hari terakhir dari data asli yang sudah di-scale
-            last_30_days_raw = df_full[FEATURES].iloc[-SEQUENCE_LENGTH:].values
-            last_30_days_scaled = scaler_X.transform(last_30_days_raw).reshape(1, SEQUENCE_LENGTH, len(FEATURES))
-
-            # 2. Jalankan fungsi prediksi rekursif
-            future_predictions = predict_future_days(model, last_30_days_scaled, scaler_y, days_ahead)
-
-            # 3. Buat tanggal untuk masa depan (hanya hari kerja)
-            future_dates = []
-            current_date = last_date
-            days_generated = 0
-
-            while days_generated < days_ahead:
-                current_date += timedelta(days=1)
-                # Skip Sabtu (5) dan Minggu (6)
-                if current_date.weekday() < 5:
-                    future_dates.append(current_date)
-                    days_generated += 1
-
-            # SIMPAN HASIL PREDIKSI KE SESSION STATE agar bisa diakses Tab 4
-            st.session_state['future_predictions'] = pd.DataFrame({
-                'Tanggal_Prediksi': future_dates,
-                'Prediksi_Harga_Emas_USD': future_predictions,
-                'Sumber': 'Prediksi LSTM (Masa Depan)'
-            })
-
-            st.success(f"✅ Prediksi {days_ahead} hari berhasil dibuat! Lihat hasilnya di grafik ini dan Tab 4 (tabel detail).")
-
-            # 4. Plot Future Prediction
-            fig_future = go.Figure()
-
-            # Tambahkan 5 titik terakhir data aktual sebagai konteks (anchor)
-            last_5_dates = df_full['date'].iloc[-5:].tolist()
-            last_5_prices = df_full['price'].iloc[-5:].tolist()
-
-            fig_future.add_trace(go.Scatter(
-                x=last_5_dates,
-                y=last_5_prices,
-                mode='lines+markers',
-                name='5 Hari Terakhir (Aktual)',
-                line=dict(color='royalblue', width=2),
-                marker=dict(size=6)
-            ))
-
-            fig_future.add_trace(go.Scatter(
-                x=future_dates,
-                y=future_predictions,
-                mode='lines+markers',
-                name=f'Prediksi ({days_ahead} Hari)',
-                line=dict(color='crimson', width=3, dash='dot'),
-                marker=dict(size=8, symbol='diamond')
-            ))
-
-            # Tambahkan garis vertikal pemisah
-            fig_future.add_vline(x=last_date, line_dash="dash", line_color="gray", annotation_text="Batas Data Historis")
-
-            fig_future.update_layout(
-                title=f"Proyeksi Harga Emas: {days_ahead} Hari Kerja Ke Depan",
-                xaxis_title="Tanggal",
-                yaxis_title="Harga Emas (USD)",
-                hovermode="x unified",
-                template="plotly_white",
-                xaxis=dict(tickformat="%d %b %Y")
-            )
-            st.plotly_chart(fig_future, width="stretch")
-
-            # Tampilkan tabel prediksi
-            st.subheader("Detail Angka Prediksi")
-            st.dataframe(
-                st.session_state['future_predictions'].style.format({'Prediksi_Harga_Emas_USD': '${:,.2f}'}),
-                width="stretch",
-                hide_index=True
-            )
 
 
 # ==========================================
@@ -388,13 +286,14 @@ with tab2:
         name='Harga Close',
         line=dict(color='gold', width=2)
     ))
-    fig_hist.add_trace(go.Scatter(
-        x=df_filtered_hist['date'],
-        y=df_filtered_hist['SMA_20'],
-        mode='lines',
-        name='SMA 20',
-        line=dict(color='blue', width=1, dash='dash')
-    ))
+    if 'SMA_20' in df_filtered_hist.columns:
+        fig_hist.add_trace(go.Scatter(
+            x=df_filtered_hist['date'],
+            y=df_filtered_hist['SMA_20'],
+            mode='lines',
+            name='SMA 20',
+            line=dict(color='blue', width=1, dash='dash')
+        ))
 
     fig_hist.update_layout(
         title="Tren Harga Emas dan Simple Moving Average (SMA 20)",
@@ -403,29 +302,30 @@ with tab2:
         hovermode="x unified",
         template="plotly_white"
     )
-    st.plotly_chart(fig_hist, width="stretch")
+    st.plotly_chart(fig_hist, use_container_width=True)
 
     # Grafik RSI
-    fig_rsi = go.Figure()
-    fig_rsi.add_trace(go.Scatter(
-        x=df_filtered_hist['date'],
-        y=df_filtered_hist['RSI'],
-        mode='lines',
-        name='RSI (14)',
-        line=dict(color='purple', width=1)
-    ))
-    fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (Jenuh Beli)")
-    fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (Jenuh Jual)")
+    if 'RSI' in df_filtered_hist.columns:
+        fig_rsi = go.Figure()
+        fig_rsi.add_trace(go.Scatter(
+            x=df_filtered_hist['date'],
+            y=df_filtered_hist['RSI'],
+            mode='lines',
+            name='RSI (14)',
+            line=dict(color='purple', width=1)
+        ))
+        fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (Jenuh Beli)")
+        fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (Jenuh Jual)")
 
-    fig_rsi.update_layout(
-        title="Relative Strength Index (RSI)",
-        xaxis_title="Tanggal",
-        yaxis_title="RSI",
-        yaxis_range=[0, 100],
-        hovermode="x unified",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_rsi, width="stretch")
+        fig_rsi.update_layout(
+            title="Relative Strength Index (RSI)",
+            xaxis_title="Tanggal",
+            yaxis_title="RSI",
+            yaxis_range=[0, 100],
+            hovermode="x unified",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig_rsi, use_container_width=True)
 
 
 # ==========================================
@@ -451,21 +351,22 @@ with tab3:
         labels={'sentiment_score': 'Skor Sentimen', 'Month': 'Bulan'}
     )
     fig_sent.update_layout(template="plotly_white")
-    st.plotly_chart(fig_sent, width="stretch")
+    st.plotly_chart(fig_sent, use_container_width=True)
 
     # Scatter Plot Korelasi
-    st.subheader("Korelasi Sentimen vs Perubahan Harga Harian")
-    fig_corr = px.scatter(
-        df_full,
-        x='sentiment_score',
-        y='change_%',
-        title="Scatter Plot: Skor Sentimen vs Perubahan Harga (%)",
-        opacity=0.6,
-        trendline="ols",
-        labels={'sentiment_score': 'Skor Sentimen', 'change_%': 'Perubahan Harga (%)'}
-    )
-    fig_corr.update_layout(template="plotly_white")
-    st.plotly_chart(fig_corr, width="stretch")
+    if 'change_%' in df_full.columns:
+        st.subheader("Korelasi Sentimen vs Perubahan Harga Harian")
+        fig_corr = px.scatter(
+            df_full,
+            x='sentiment_score',
+            y='change_%',
+            title="Scatter Plot: Skor Sentimen vs Perubahan Harga (%)",
+            opacity=0.6,
+            trendline="ols",
+            labels={'sentiment_score': 'Skor Sentimen', 'change_%': 'Perubahan Harga (%)'}
+        )
+        fig_corr.update_layout(template="plotly_white")
+        st.plotly_chart(fig_corr, use_container_width=True)
 
 
 # ==========================================
@@ -476,7 +377,7 @@ with tab4:
     st.markdown("Tabel di bawah ini menampilkan data yang telah digabungkan, dibersihkan, dan dilengkapi dengan fitur teknikal serta sentimen.")
 
     # --- TABEL DATA HISTORIS ---
-    st.subheader("📊 Data Historis (2021 - April 2026)")
+    st.subheader(" Data Historis (2021 - April 2026)")
     st.dataframe(
         df_full,
         use_container_width=True,
@@ -491,7 +392,7 @@ with tab4:
     # Tombol Download Data Historis
     csv_historis = df_full.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label=" Download Data Historis sebagai CSV",
+        label="📥 Download Data Historis sebagai CSV",
         data=csv_historis,
         file_name='gold_sentiment_historis.csv',
         mime='text/csv',
@@ -499,36 +400,221 @@ with tab4:
 
     st.markdown("---")
 
-    # --- TABEL PREDIKSI MASA DEPAN (dari Session State) ---
-    st.subheader("🔮 Data Prediksi Masa Depan (Future Forecasting)")
-
-    if 'future_predictions' in st.session_state:
-        df_future = st.session_state['future_predictions']
-
-        st.info(f"✨ Menampilkan **{len(df_future)} hari** prediksi ke depan, dimulai dari {df_future['Tanggal_Prediksi'].min().strftime('%d %B %Y')}.")
-
-        # Tampilkan tabel prediksi
+    # --- TABEL PREDIKSI TESTING ---
+    if not df_pred.empty:
+        st.subheader("📋 Data Prediksi Testing (Data Testing 20%)")
         st.dataframe(
-            df_future.style.format({'Prediksi_Harga_Emas_USD': '${:,.2f}'}),
+            df_pred,
             use_container_width=True,
             height=400,
-            hide_index=True,
             column_config={
-                "Tanggal_Prediksi": st.column_config.DateColumn("Tanggal Prediksi", format="DD MMM YYYY"),
-                "Prediksi_Harga_Emas_USD": st.column_config.NumberColumn("Prediksi Harga (USD)", format="$%.2f"),
+                "Date": st.column_config.DateColumn("Tanggal", format="DD MMM YYYY"),
+                "Actual_Price": st.column_config.NumberColumn("Harga Aktual (USD)", format="$%.2f"),
+                "Predicted_Price": st.column_config.NumberColumn("Harga Prediksi (USD)", format="$%.2f"),
             }
         )
 
-        # Tombol Download Data Prediksi
-        csv_prediksi = df_future.to_csv(index=False).encode('utf-8')
+        # Tombol Download Data Prediksi Testing
+        csv_prediksi_testing = df_pred.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Download Data Prediksi sebagai CSV",
-            data=csv_prediksi,
-            file_name='gold_sentiment_prediksi_masa_depan.csv',
+            label="📥 Download Data Prediksi Testing sebagai CSV",
+            data=csv_prediksi_testing,
+            file_name='gold_sentiment_prediksi_testing.csv',
             mime='text/csv',
         )
 
-        st.success("✅ Data prediksi ini juga bisa digabungkan dengan data historis untuk analisis lebih lanjut.")
 
-    else:
-        st.warning("⚠️ **Belum ada data prediksi.** Silakan buka **Tab 1 (Prediksi vs Aktual)**, pilih durasi prediksi, dan klik tombol **'🚀 Jalankan Prediksi Masa Depan'** terlebih dahulu. Setelah itu, kembali ke tab ini untuk melihat hasilnya.")
+# ==========================================
+# TAB 5: PREDIKSI MASA DEPAN (FUTURE FORECASTING)
+# ==========================================
+with tab5:
+    st.header("🔮 Prediksi Harga Emas Masa Depan")
+    st.markdown("""
+    Gunakan model yang sudah dilatih untuk memprediksi harga emas di masa depan. 
+    Prediksi dilakukan secara **rekursif** - model memprediksi 1 hari, lalu menggunakan 
+    hasil tersebut sebagai input untuk hari berikutnya.
+    
+    **⚠️ Catatan Penting:**
+    - Prediksi lebih dari 30 hari tidak disarankan karena akumulasi error
+    - Prediksi ini mengasumsikan kondisi pasar relatif stabil
+    - Gunakan sebagai referensi, bukan satu-satunya dasar keputusan investasi
+    """)
+
+    # Informasi data terakhir
+    last_date = df_full['date'].max()
+    last_date_str = last_date.strftime("%d %B %Y")
+    last_price = df_full['price'].iloc[-1]
+
+    st.info(f"📅 **Titik Mulai Prediksi:** {last_date_str} (Harga Terakhir: ${last_price:,.2f})")
+
+    # Pilihan durasi prediksi
+    duration_options = {
+        "7 Hari (1 Minggu)": 7,
+        "14 Hari (2 Minggu)": 14,
+        "30 Hari (1 Bulan)": 30
+    }
+
+    selected_duration = st.selectbox(
+        "Pilih durasi prediksi:",
+        options=list(duration_options.keys()),
+        index=0
+    )
+
+    days_ahead = duration_options[selected_duration]
+
+    # Tombol jalankan prediksi
+    if st.button("🚀 Jalankan Prediksi", type="primary"):
+        with st.spinner(f"Sedang memprediksi {days_ahead} hari ke depan..."):
+
+            # 1. Ambil 60 hari terakhir untuk input awal
+            last_60_days_raw = df_full[FEATURES].iloc[-SEQUENCE_LENGTH:].values
+            last_60_days_scaled = scaler_X.transform(last_60_days_raw).reshape(1, SEQUENCE_LENGTH, len(FEATURES))
+
+            # 2. Jalankan prediksi rekursif
+            future_predictions = predict_future_days(
+                model,
+                last_60_days_scaled,
+                scaler_y,
+                days_ahead
+            )
+
+            # 3. Buat tanggal untuk masa depan (hanya hari kerja)
+            future_dates = []
+            current_date = last_date
+            days_generated = 0
+
+            while days_generated < days_ahead:
+                current_date += timedelta(days=1)
+                # Skip Sabtu (5) dan Minggu (6)
+                if current_date.weekday() < 5:
+                    future_dates.append(current_date)
+                    days_generated += 1
+
+            # 4. Simpan hasil ke session state
+            st.session_state['future_predictions'] = pd.DataFrame({
+                'Tanggal': future_dates,
+                'Prediksi_Harga_USD': future_predictions,
+                'Durasi': f"{days_ahead} Hari"
+            })
+
+            st.success(f"✅ Prediksi {days_ahead} hari berhasil!")
+
+            # 5. Visualisasi Grafik
+            fig_future = go.Figure()
+
+            # Tambahkan 10 hari terakhir sebagai konteks
+            last_10_dates = df_full['date'].iloc[-10:].tolist()
+            last_10_prices = df_full['price'].iloc[-10:].tolist()
+
+            fig_future.add_trace(go.Scatter(
+                x=last_10_dates,
+                y=last_10_prices,
+                mode='lines+markers',
+                name='10 Hari Terakhir (Aktual)',
+                line=dict(color='royalblue', width=2),
+                marker=dict(size=6)
+            ))
+
+            # Tambahkan prediksi
+            fig_future.add_trace(go.Scatter(
+                x=future_dates,
+                y=future_predictions,
+                mode='lines+markers',
+                name=f'Prediksi ({days_ahead} Hari)',
+                line=dict(color='crimson', width=3, dash='dot'),
+                marker=dict(size=8, symbol='diamond', color='crimson')
+            ))
+
+            # Garis vertikal pemisah
+            fig_future.add_vline(
+                x=last_date,
+                line_dash="dash",
+                line_color="gray",
+                annotation_text="Batas Data Historis"
+            )
+
+            fig_future.update_layout(
+                title=f"Proyeksi Harga Emas: {days_ahead} Hari Kerja Ke Depan",
+                xaxis_title="Tanggal",
+                yaxis_title="Harga Emas (USD)",
+                hovermode="x unified",
+                template="plotly_white",
+                xaxis=dict(tickformat="%d %b %Y"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+
+            st.plotly_chart(fig_future, use_container_width=True)
+
+            # 6. Statistik Prediksi
+            st.subheader("📊 Statistik Prediksi")
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            pred_min = future_predictions.min()
+            pred_max = future_predictions.max()
+            pred_mean = future_predictions.mean()
+            pred_change = ((future_predictions[-1] - last_price) / last_price) * 100
+
+            col1.metric(
+                label="Harga Prediksi Terendah",
+                value=f"${pred_min:,.2f}"
+            )
+
+            col2.metric(
+                label="Harga Prediksi Tertinggi",
+                value=f"${pred_max:,.2f}"
+            )
+
+            col3.metric(
+                label="Rata-rata Prediksi",
+                value=f"${pred_mean:,.2f}"
+            )
+
+            col4.metric(
+                label="Perubahan dari Harga Terakhir",
+                value=f"{pred_change:+.2f}%",
+                delta=f"${future_predictions[-1] - last_price:+,.2f}",
+                delta_color="normal" if pred_change > 0 else "inverse"
+            )
+
+            # 7. Tabel Detail Prediksi
+            st.subheader("📋 Detail Prediksi per Hari")
+
+            df_pred_detail = st.session_state['future_predictions'].copy()
+            df_pred_detail['Perubahan_Harian'] = df_pred_detail['Prediksi_Harga_USD'].pct_change() * 100
+
+            # Format tampilan
+            st.dataframe(
+                df_pred_detail.style.format({
+                    'Prediksi_Harga_USD': '${:,.2f}',
+                    'Perubahan_Harian': '{:+.2f}%'
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # 8. Tombol Download
+            csv_prediksi = df_pred_detail.to_csv(index=False, encoding='utf-8')
+            st.download_button(
+                label="📥 Download Hasil Prediksi (CSV)",
+                data=csv_prediksi,
+                file_name=f'prediksi_emas_{days_ahead}_hari_{last_date.strftime("%Y%m%d")}.csv',
+                mime='text/csv'
+            )
+
+            # 9. Analisis Tren
+            st.subheader("📈 Analisis Tren")
+
+            if pred_change > 0:
+                st.success(f"📈 **Tren Naik:** Model memprediksi kenaikan harga sebesar {pred_change:.2f}% dalam {days_ahead} hari ke depan.")
+            else:
+                st.warning(f"📉 **Tren Turun:** Model memprediksi penurunan harga sebesar {abs(pred_change):.2f}% dalam {days_ahead} hari ke depan.")
+
+            # Volatilitas
+            volatility = future_predictions.std() / future_predictions.mean() * 100
+            if volatility < 2:
+                st.info(f" **Volatilitas Rendah:** {volatility:.2f}% - Pasar diprediksi stabil")
+            elif volatility < 5:
+                st.warning(f"🟡 **Volatilitas Sedang:** {volatility:.2f}% - Waspada fluktuasi")
+            else:
+                st.error(f"🔴 **Volatilitas Tinggi:** {volatility:.2f}% - Siapkan strategi hedging")
